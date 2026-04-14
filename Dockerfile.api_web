@@ -1,0 +1,55 @@
+# ================================
+# TAREFA 1: Dockerfile para API_WEB
+# ================================
+# 
+# Justificativa da Imagem Base:
+# - node:14-alpine foi escolhido por:
+#   • SEGURANÇA: Alpine Linux é minimal, reduzindo vulnerabilidades e superfície de ataque
+#   • TAMANHO: ~150MB (vs 900MB+ do node:14 padrão). Ideal para CI/CD e deployments rápidos
+#   • PERFORMANCE: Imagem compacta acelera pulls do registry e startup do container
+# ================================
+
+# Stage 1: Builder (compilação e instalação de dependências)
+FROM node:14-alpine AS builder
+
+# Define diretório de trabalho dentro do container
+WORKDIR /app
+
+# Copia apenas package.json e package-lock.json para cache de camadas
+# Isso permite que Docker reutilize a camada de dependências se o código mudar
+COPY package*.json ./
+
+# Instala dependências de produção com otimização de camadas
+# Agrupa RUN commands e executa limpeza de cache na mesma camada para reduzir tamanho
+RUN npm install --production && \
+    npm cache clean --force && \
+    rm -rf ~/.npm
+
+# Stage 2: Runtime (imagem final otimizada)
+FROM node:14-alpine
+
+# Metadados da imagem
+LABEL maintainer="ADS Project" \
+      description="API Web - Node.js 14 Alpine" \
+      version="1.0"
+
+# Define diretório de trabalho
+WORKDIR /app
+
+# Copia node_modules do builder para reutilizar dependências pré-compiladas
+COPY --from=builder /app/node_modules ./node_modules
+
+# Copia apenas os arquivos necessários para executar a aplicação
+# Reduz tamanho da imagem: não inclui node_modules duplicate, .git, etc
+COPY package*.json ./
+COPY app.js .
+
+# Expõe a porta 3000 (será mapeada para 8080 no host via docker-compose)
+EXPOSE 3000
+
+# Health check para monitorar saúde do container
+HEALTHCHECK --interval=10s --timeout=5s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:3000', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"
+
+# Comando para iniciar a aplicação
+CMD ["node", "app.js"]

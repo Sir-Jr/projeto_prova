@@ -1,0 +1,117 @@
+# ================================
+# TAREFA 2: docker-compose.yml
+# ================================
+# Orquestração Docker com:
+# - api_web (Node.js 14 com Dockerfile.api_web)
+# - db_prod (PostgreSQL 15)
+# - Volume pg_prova para persistência
+# - Rede network_prova customizada
+# ================================
+
+version: '3.8'
+
+# ===========================================
+# SERVIÇOS
+# ===========================================
+services:
+
+  # Serviço: API Web (Node.js)
+  api_web:
+    # Build a partir do Dockerfile.api_web no diretório atual
+    build:
+      context: .
+      dockerfile: Dockerfile.api_web
+    
+    # Nome do container
+    container_name: api_web_container
+    
+    # Porta: 8080 (host) -> 3000 (container)
+    ports:
+      - "8080:3000"
+    
+    # Variáveis de ambiente para a aplicação
+    environment:
+      NODE_ENV: production
+      DB_HOST: db_prod
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-prova_ads}
+      DB_PASSWORD: ${DB_PASSWORD:-ads2026}
+      DB_NAME: ${DB_NAME:-ads_app}
+      PORT: 3000
+    
+    # Dependência explícita do serviço de banco de dados
+    depends_on:
+      db_prod:
+        condition: service_healthy
+    
+    # Rede customizada para comunicação
+    networks:
+      - network_prova
+    
+    # Política de reinicialização automática
+    restart: unless-stopped
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Serviço: Banco de Dados (PostgreSQL)
+  db_prod:
+    # Imagem: PostgreSQL 15 (Alpine - seguro e compacto)
+    image: postgres:15-alpine
+    
+    # Nome do container
+    container_name: db_prod_container
+    
+    # Variáveis de ambiente para credenciais simuladas
+    environment:
+      POSTGRES_USER: ${DB_USER:-prova_ads}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-ads2026}
+      POSTGRES_DB: ${DB_NAME:-ads_app}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
+    
+    # Porta: 5432 (padrão PostgreSQL) mapeada para 3010 no host
+    ports:
+      - "3010:5432"
+    
+    # Volume persistente para dados do PostgreSQL
+    volumes:
+      - pg_prova:/var/lib/postgresql/data
+    
+    # Rede customizada
+    networks:
+      - network_prova
+    
+    # Health check para verificar se o DB está pronto
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-prova_ads}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    
+    # Política de reinicialização
+    restart: unless-stopped
+
+# ===========================================
+# VOLUMES (Persistência de Dados)
+# ===========================================
+volumes:
+  # Volume nomeado para dados do PostgreSQL
+  # Garante que o estado da aplicação sobreviva ao ciclo de vida do container
+  pg_prova:
+    driver: local
+
+# ===========================================
+# REDES (Isolamento e Comunicação)
+# ===========================================
+networks:
+  # Rede customizada para isolamento galvanico
+  # Habilita descoberta de serviço via DNS entre containers
+  network_prova:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16
