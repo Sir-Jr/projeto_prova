@@ -115,7 +115,7 @@ db_prod_container
 ✅ **db_prod_container** healthy on port 5432  
 ✅ Ambos containers ativos e comunicáveis
 
-![Print 1 - Docker PS](images/print1.png)
+![Print 1 - Docker PS](images/print.png)
 
 ---
 
@@ -141,7 +141,7 @@ round-trip min/avg/max = 0.083/0.250/0.578 ms
 ✅ DNS resolveu `db_prod` para IP 172.25.0.2  
 ✅ Rede `network_prova` funcionando corretamente
 
-![Print 2 - Ping Inter-Containers](images/print2.png)
+![Print 2 - Logs da Aplicacao](images/image.png)
 
 ---
 
