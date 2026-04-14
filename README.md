@@ -347,41 +347,19 @@ projeto_prova/
 
 ### 1. A Diferença entre CMD e ENTRYPOINT no Dockerfile
 
-Ao construir uma imagem Docker, é importante entender como as instruções CMD e ENTRYPOINT funcionam, pois elas definem o comportamento do container quando executado. Embora pareçam fazer coisas similares, elas têm propósitos bem distintos e oferecem diferentes níveis de flexibilidade ao usuário.
-
-A instrução ENTRYPOINT define o executável principal do container, aquelo que sempre será executado independentemente de quais argumentos você passar. Pense nela como o "coração" da aplicação - é praticamente imutável. Por outro lado, CMD funciona como um conjunto de argumentos padrão que serão passados ao ENTRYPOINT, e aqui está o detalhe importante: **CMD pode ser facilmente substituído quando você executa um container com o comando `docker run`**.
-
-Isso significa que se você tiver um Dockerfile com `ENTRYPOINT ["node"]` e `CMD ["app.js"]`, quando você executar `docker run minha-imagem`, o container iniciará executando `node app.js`. No entanto, se você quiser executar um script diferente sem alterar a imagem, basta fazer `docker run minha-imagem server.js`, e o container executará `node server.js`. O que acontece é que o novo argumento substituiu completamente o CMD original.
-
-**A grande diferença está justamente nessa flexibilidade: CMD permite que o usuário modifique os argumentos de inicialização através do comando `docker run` sem precisar redefinir o executável principal.** Caso você quisesse realmente substituir o ENTRYPOINT, seria necessário usar a flag `--entrypoint` e especificar o novo executável, o que é bem menos comum e intuitivo. Portanto, para aplicações que precisam de flexibilidade, especialmente em ambientes de desenvolvimento e teste, o CMD é a ferramenta ideal.
+Ao construir uma imagem Docker, é importante entender como as instruções CMD e ENTRYPOINT funcionam, pois elas definem o comportamento do container quando executado. ENTRYPOINT define o executável principal (imutável), enquanto CMD define argumentos padrão. **A grande diferença é que CMD pode ser facilmente substituído** com `docker run imagem novo_comando`, sem alterar o executável. Por exemplo, com `ENTRYPOINT ["node"]` e `CMD ["app.js"]`, você pode fazer `docker run imagem server.js` para executar `node server.js`. Para substituir ENTRYPOINT seria necessário usar `--entrypoint`, bem menos intuitivo. Logo, CMD oferece a flexibilidade necessária para ajustar argumentos sem redefinir o executável principal.
 
 ---
 
 ### 2. A Função do depends_on no Docker Compose e a Questão da Prontidão do Banco de Dados
 
-Quando trabalhamos com múltiplos serviços em um ambiente containerizado, geralmente nos deparamos com um problema: em qual ordem devemos iniciar os containers? A resposta é onde entra a propriedade `depends_on` no docker-compose.yml. Ela nos permite especificar que um serviço depende de outro, controlando a sequência de inicialização.
-
-Por exemplo, em nosso projeto, temos `api_web` que depende de `db_prod`. A função do `depends_on` é garantir que o container do banco de dados seja criado e começe a inicializar antes que a aplicação web tente fazer conexões. Isso é importante porque facilita a descoberta de serviços através do DNS automático que o Docker Compose oferece - os containers conseguem se comunicar usando o nome do serviço (como `db_prod`) como hostname, sem precisar conhecer endereços IP específicos.
-
-Além disso, `depends_on` garante que a porta do banco de dados (5432 neste caso) esteja aberta e disponível, evitando erros de "conexão recusada" que ocorreriam se a API tentasse conectar antes do processo de inicialização do PostgreSQL estar em andamento.
-
-**No entanto, há um ponto crítico a considerar: `depends_on` não garante que o banco de dados esteja verdadeiramente pronto para aceitar conexões.** É uma diferença sutil, mas importante. O container pode estar iniciado, a porta pode estar aberta, mas o PostgreSQL ainda pode estar executando seu próprio startup, carregando tabelas, executando migrações, e assim por diante. Se a API tentar conectar neste exato momento, pode enfrentar erros de conexão ou timeout.
-
-Para resolver este problema propriamente, implementamos **health checks com a condição `service_healthy`**. Um health check é essencialmente um teste que o Docker executa periodicamente para verificar se o serviço está realmente operacional. No nosso caso, o PostgreSQL executa o comando `pg_isready`, que retorna sucesso apenas quando o banco realmente está pronto para aceitar conexões novas. Configuramos a API para aguardar este health check passar antes de iniciar, garantindo assim uma inicialização segura e confiável dos nossos serviços.
+Quando trabalhamos com múltiplos serviços em um ambiente containerizado, `depends_on` controla a **ordem de inicialização** dos serviços. Em nosso projeto, `api_web` depende de `db_prod`, garantindo que o banco seja criado antes da API tentar conexões. Isso facilita descoberta de serviços via DNS e evita erros de porta não disponível. **Porém, há um detalhe crítico: `depends_on` não garante que o banco esteja pronto para conexões** - ele pode estar iniciado mas o PostgreSQL ainda em startup. Para garantir prontidão, usamos **health checks com `service_healthy`**: `api_web` só inicia quando `db_prod` responde positivamente ao `pg_isready`, assegurando inicialização segura.
 
 ---
 
 ### 3. Copy-on-Write na Arquitetura Docker e a Natureza Efêmera dos Containers
 
-Para compreender por que dados em containers são perdidos quando removemos o container, precisamos entender um pouco sobre como Docker armazena dados. Docker utiliza uma arquitetura chamada Copy-on-Write (CoW), e ela é fundamental para entender a natureza efêmera dos containers.
-
-Imagine um container como um "sanduíche de camadas" - a imagem base possui várias camadas somente para leitura empilhadas uma sobre a outra. Na verdade, a maioria dessas camadas é imutável e compartilhada entre containers da mesma imagem. Porém, quando um container é criado, o Docker adiciona uma camada especial no topo chamada "writable layer" ou "camada de escrita". É nesta camada que o container escreve seus dados - qualquer arquivo criado, modificado ou deletado enquanto o container está rodando é armazenado aqui.
-
-O problema é que essa camada de escrita é totalmente ligada à vida do container. Quando você executa `docker rm` para deletar um container, essa camada simplesmente desaparece. Todo e qualquer dado que foi escrito nela - arquivos de configuração dinâmica, caches, logs, tudo - é perdido permanentemente. Essa é a natureza efêmera do container: ele é descartável por design.
-
-Para resolver este problema quando precisamos de persistência, o Docker oferece duas soluções principais, cada uma com suas características. **Volumes** são gerenciados diretamente pelo Docker Engine e armazenados em um local específico do host gerenciado pelo próprio Docker (tipicamente em `/var/lib/docker/volumes/`). Eles são independentes da estrutura de diretórios do servidor e podem ser portados facilmente entre hosts. Por outro lado, temos **Bind Mounts**, que funcionam mapeando um diretório ou arquivo específico do host diretamente para dentro do container. Enquanto Bind Mounts oferecem flexibilidade de localização, eles criam um acoplamento direto com o filesystem do host e são menos portáveis.
-
-**Em nosso projeto, escolhemos usar Volumes para armazenar os dados do PostgreSQL.** Quando configuramos `pg_prova:/var/lib/postgresql/data` no docker-compose, estamos dizendo ao Docker: "mantenha os dados do banco em um volume gerenciado, não na camada efêmera do container". Com isso, quando executamos `docker compose down`, os containers e a rede são removidos, mas o volume `pg_prova` permanece intacto, preservando todos os dados. Se quiséssemos realmente deletar tudo, teríamos que executar `docker compose down -v`, onde a flag `-v` instrui o Docker a remover também os volumes.
+Para compreender por que dados em containers são perdidos quando removemos o container, é necessário entender a arquitetura Copy-on-Write (CoW) do Docker. A imagem base possui camadas imutáveis e compartilhadas; cada container adiciona uma "writable layer" para suas mudanças. O problema é que essa camada é descartada com `docker rm`, perdendo todos os dados permanentemente - essa é a natureza efêmera do container. Para persistência, Docker oferece **Volumes** (gerenciados pelo Engine, portáveis) e **Bind Mounts** (acoplados ao filesystem do host, menos portáveis). Em nosso projeto, usamos Volumes: `pg_prova:/var/lib/postgresql/data` mantém dados persistentes mesmo após `docker compose down`. Use `docker compose down -v` apenas se quiser deletar os volumes.
 
 ---
 
