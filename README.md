@@ -141,7 +141,7 @@ round-trip min/avg/max = 0.083/0.250/0.578 ms
 ✅ DNS resolveu `db_prod` para IP 172.25.0.2  
 ✅ Rede `network_prova` funcionando corretamente
 
-![Print 2 - Logs da Aplicacao](images/image.png)
+![Print 2 - Logs da Aplicacao](images/print1.png)
 
 ---
 
